@@ -50,12 +50,37 @@ if (!$customer) {
   exit('Customer not found');
 }
 
-// ---- ledger entries (statement)
+// ---- ledger entries (statement) with smart reference display + link to invoice
 $stmt = $pdo->prepare("
-  SELECT id, entry_date, type, ref_table, ref_id, debit, credit, due_date, notes
-  FROM ledger_entries
-  WHERE party_id = ?
-  ORDER BY entry_date ASC, id ASC
+  SELECT
+    le.id, le.entry_date, le.type, le.ref_table, le.ref_id,
+    le.debit, le.credit, le.due_date, le.notes,
+
+    -- payment -> invoice link (from payments.ref_table/ref_id)
+    p.ref_table AS pay_ref_table,
+    p.ref_id    AS pay_ref_id,
+
+    -- invoice numbers (optional)
+    si.invoice_no  AS invoice_no_direct,
+    si2.invoice_no AS invoice_no_from_payment,
+
+    -- for linking to sale_view
+    si.id  AS invoice_id_direct,
+    si2.id AS invoice_id_from_payment
+
+  FROM ledger_entries le
+
+  LEFT JOIN payments p
+    ON le.ref_table='payments' AND p.id = le.ref_id
+
+  LEFT JOIN sales_invoices si
+    ON le.ref_table='sales_invoices' AND si.id = le.ref_id
+
+  LEFT JOIN sales_invoices si2
+    ON p.ref_table='sales_invoices' AND si2.id = p.ref_id
+
+  WHERE le.party_id = ?
+  ORDER BY le.entry_date ASC, le.id ASC
 ");
 $stmt->execute([$id]);
 $entries = $stmt->fetchAll();
@@ -83,11 +108,44 @@ foreach ($entries as $e) {
 
   $running += ($debit - $credit);
 
+  // Build smart reference display + link to invoice if possible
+  $refDisplay = '—';
+  $invoiceLinkId = null;
+
+  if (!empty($e['ref_table']) && !empty($e['ref_id'])) {
+
+    // Direct invoice row
+    if ($e['ref_table'] === 'sales_invoices') {
+      $invoiceLinkId = (int)($e['invoice_id_direct'] ?? 0);
+      $invNo = $e['invoice_no_direct'] ?? null;
+      $refDisplay = $invNo ? ("فاتورة بيع " . $invNo) : ("فاتورة بيع #".$e['ref_id']);
+    }
+
+    // Payment row -> may link to invoice through payments.ref_table/ref_id
+    elseif ($e['ref_table'] === 'payments') {
+      if (($e['pay_ref_table'] ?? '') === 'sales_invoices' && !empty($e['pay_ref_id'])) {
+        $invoiceLinkId = (int)($e['invoice_id_from_payment'] ?? $e['pay_ref_id']);
+        $invNo = $e['invoice_no_from_payment'] ?? null;
+
+        $refDisplay = $invNo
+          ? ("تحصيل → فاتورة بيع " . $invNo)
+          : ("تحصيل → فاتورة بيع #".$e['pay_ref_id']);
+      } else {
+        $refDisplay = "تحصيل #".$e['ref_id'];
+      }
+    }
+
+    // Anything else
+    else {
+      $refDisplay = $e['ref_table']." #".$e['ref_id'];
+    }
+  }
+
   $rows[] = [
     'entry_date' => $e['entry_date'],
     'type' => $e['type'],
-    'ref_table' => $e['ref_table'],
-    'ref_id' => $e['ref_id'],
+    'ref_display' => $refDisplay,
+    'invoice_link_id' => $invoiceLinkId,
     'debit' => $debit,
     'credit' => $credit,
     'due_date' => $e['due_date'],
@@ -151,15 +209,14 @@ $today = date('Y-m-d');
           ← رجوع للعملاء
         </a>
 
-        <!-- هنفعّلهم لما نعمل صفحة الفواتير والتحصيل -->
-        <span class="inline-flex items-center justify-center rounded-xl bg-slate-900 text-white px-4 py-2 opacity-60 cursor-not-allowed"
-              title="هنضيفها في الخطوة الجاية">
+        <a href="<?= $base ?>/sale_create.php?customer_id=<?= (int)$customer['id'] ?>"
+           class="inline-flex items-center justify-center rounded-xl bg-slate-900 text-white px-4 py-2 hover:bg-slate-800 font-semibold">
           + فاتورة بيع
-        </span>
-        <span class="inline-flex items-center justify-center rounded-xl border border-slate-200 px-4 py-2 opacity-60 cursor-not-allowed"
-              title="هنضيفها في الخطوة الجاية">
+        </a>
+        <a href="<?= $base ?>/payment_in_create.php?customer_id=<?= (int)$customer['id'] ?>"
+           class="inline-flex items-center justify-center rounded-xl border border-slate-200 px-4 py-2 hover:bg-slate-50 font-semibold">
           + تحصيل
-        </span>
+        </a>
       </div>
     </div>
   </div>
@@ -239,10 +296,13 @@ $today = date('Y-m-d');
             <td class="py-2 px-2 whitespace-nowrap"><?= h($r['entry_date']) ?></td>
             <td class="py-2 px-2 whitespace-nowrap font-semibold"><?= h(typeLabel($r['type'])) ?></td>
             <td class="py-2 px-2 whitespace-nowrap text-slate-600">
-              <?php if (!empty($r['ref_table']) && !empty($r['ref_id'])): ?>
-                <?= h($r['ref_table']) ?> #<?= (int)$r['ref_id'] ?>
+              <?php if (!empty($r['invoice_link_id'])): ?>
+                <a class="text-blue-700 font-semibold hover:underline"
+                   href="<?= $base ?>/sale_view.php?id=<?= (int)$r['invoice_link_id'] ?>">
+                  <?= h($r['ref_display']) ?>
+                </a>
               <?php else: ?>
-                —
+                <?= h($r['ref_display'] ?? '—') ?>
               <?php endif; ?>
             </td>
             <td class="py-2 px-2 whitespace-nowrap"><?= $r['debit'] ? money($r['debit']) : '' ?></td>
