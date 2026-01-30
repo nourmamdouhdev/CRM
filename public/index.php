@@ -20,7 +20,7 @@ $productsCount  = (int)$pdo->query("SELECT COUNT(*) AS c FROM products WHERE is_
 $title = "Dashboard";
 $base = $config['app']['base_url'] ?? '/tagom/public';
 $title = "Dashboard";
-$subtitle = "نظرة سريعة على السيستم";
+$subtitle = "نظر سريعة على السيستم";
 
 require __DIR__ . '/../app/views/partials/header.php';
 ?>
