@@ -1,25 +1,8 @@
 <?php
-require __DIR__ . '/../app/core/DB.php';
-require __DIR__ . '/../app/core/Auth.php';
-require __DIR__ . '/../app/Middlewares/AuthMiddleware.php';
-
-$config = require __DIR__ . '/../config/config.php';
-session_name($config['app']['session_name']);
-session_start();
-
-AuthMiddleware::handle();
-$user = Auth::user();
-$pdo  = DB::pdo();
-
-$base = $config['app']['base_url'] ?? '/tagom/public';
-
-function h($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
-function money($n){ return number_format((float)$n, 2); }
-
+require __DIR__ . '/bootstrap.php';
 $id = (int)($_GET['id'] ?? 0);
 if ($id <= 0) {
-  http_response_code(400);
-  die("Missing invoice id");
+  render_error('طلب غير صالح (invoice).', 400);
 }
 
 // 1) Load invoice + supplier
@@ -36,8 +19,7 @@ $stmt->execute([$id]);
 $invoice = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$invoice) {
-  http_response_code(404);
-  die("Invoice not found");
+  render_error('الفاتورة غير موجودة.', 404);
 }
 
 // 2) Load items

@@ -1,32 +1,15 @@
 <?php
-require __DIR__ . '/../app/core/DB.php';
-require __DIR__ . '/../app/core/Auth.php';
-require __DIR__ . '/../app/core/CSRF.php';
-require __DIR__ . '/../app/Middlewares/AuthMiddleware.php';
-
-$config = require __DIR__ . '/../config/config.php';
-session_name($config['app']['session_name']);
-session_start();
-
-AuthMiddleware::handle();
-$user = Auth::user();
-$pdo  = DB::pdo();
-
-$base = $config['app']['base_url'] ?? '/tagom/public';
-
-function h($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
-function money($n){ return number_format((float)$n, 2); }
-
+require __DIR__ . '/bootstrap.php';
 if (empty($user['id'])) {
-  die("User not authenticated (missing user id).");
+  render_error('Authentication required.', 401);
 }
+authorize($config['authz']['payment_in_create'] ?? [ROLE_ADMIN, ROLE_MANAGER]);
 
 $customer_id = (int)($_GET['customer_id'] ?? $_POST['customer_id'] ?? 0);
 $invoice_id_q = (int)($_GET['invoice_id'] ?? 0);
 
 if ($customer_id <= 0) {
-  http_response_code(400);
-  die("Missing customer_id");
+  render_error('طلب غير صالح (customer).', 400);
 }
 
 // Load customer
@@ -40,8 +23,7 @@ $stmt->execute([$customer_id]);
 $customer = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$customer) {
-  http_response_code(404);
-  die("Customer not found");
+  render_error('العميل غير موجود.', 404);
 }
 
 // Load unpaid invoices (remaining_amount > 0)
@@ -56,11 +38,38 @@ $openInvoices = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 $csrf = CSRF::token();
 $error = null;
+$usePaymentService = (bool)($config['features']['use_payment_service'] ?? false);
 
 $today = date('Y-m-d');
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['action'] ?? '') === 'save') && $usePaymentService) {
+  try {
+    CSRF::verify($_POST['csrf_token'] ?? null);
+
+    $validator = new \App\Domain\Payments\Validators\CollectPaymentValidator();
+    $dto = $validator->validate($_POST, $customer_id);
+    $service = new \App\Domain\Payments\PaymentService($pdo);
+    $service->collectFromCustomer($dto, (int)$user['id']);
+
+    if ($dto->invoiceId > 0) {
+      header("Location: {$base}/sale_view.php?id={$dto->invoiceId}");
+      exit;
+    }
+    header("Location: {$base}/customer.php?id={$customer_id}");
+    exit;
+  } catch (InvalidArgumentException $e) {
+    $error = $e->getMessage();
+  } catch (Throwable $e) {
+    log_message('error', 'Failed to record customer payment via service', [
+      'exception' => $e->getMessage(),
+      'trace' => $e->getTraceAsString(),
+    ]);
+    $error = "Unexpected error while saving payment. Please try again.";
+  }
+}
+
 // Handle POST
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['action'] ?? '') === 'save')) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['action'] ?? '') === 'save') && !$usePaymentService) {
   try {
     CSRF::verify($_POST['csrf_token'] ?? null);
 
@@ -180,13 +189,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['action'] ?? '') === 'save
 
         } catch (Throwable $e) {
           if ($pdo->inTransaction()) $pdo->rollBack();
-          $error = "Database error: " . $e->getMessage();
+          log_message('error', 'Failed to record customer payment', [
+            'exception' => $e->getMessage(),
+            'trace' => $e->getTraceAsString(),
+          ]);
+          $error = "حدث خطأ في قاعدة البيانات. حاول مرة أخرى.";
         }
       }
     }
 
   } catch (Throwable $e) {
-    $error = "Error: " . $e->getMessage();
+    log_message('error', 'Unhandled error in payment_in_create', [
+      'exception' => $e->getMessage(),
+      'trace' => $e->getTraceAsString(),
+    ]);
+    $error = "حدث خطأ غير متوقع. حاول مرة أخرى.";
   }
 }
 

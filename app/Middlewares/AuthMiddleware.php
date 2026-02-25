@@ -3,9 +3,10 @@
 final class AuthMiddleware {
   public static function handle(): void {
     if (!Auth::check()) {
-      header('Location: /tagom/public/login.php');
+      $config = require __DIR__ . '/../../config/config.php';
+      $base = $config['app']['base_url'] ?? '/tagom/public';
+      header('Location: ' . $base . '/login.php');
       exit;
-
     }
   }
 }

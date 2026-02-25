@@ -1,25 +1,9 @@
 <?php
-require __DIR__ . '/../app/core/DB.php';
-require __DIR__ . '/../app/core/Auth.php';
-require __DIR__ . '/../app/core/CSRF.php';
-require __DIR__ . '/../app/Middlewares/AuthMiddleware.php';
-
-$config = require __DIR__ . '/../config/config.php';
-session_name($config['app']['session_name']);
-session_start();
-
-AuthMiddleware::handle();
-$user = Auth::user();
-$pdo  = DB::pdo();
-
-$base = $config['app']['base_url'] ?? '/tagom/public';
-
-function h($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
-function money($n){ return number_format((float)$n, 2); }
-
+require __DIR__ . '/bootstrap.php';
 if (empty($user['id'])) {
-  die("User not authenticated (missing user id).");
+  render_error('Authentication required.', 401);
 }
+authorize($config['authz']['sales_create'] ?? [ROLE_ADMIN, ROLE_MANAGER]);
 
 // ---------- Load customers
 $customers = $pdo->query("
@@ -57,9 +41,35 @@ if ($selectedSupplierId > 0) {
 }
 
 $csrf = CSRF::token();
+$useSalesService = (bool)($config['features']['use_sales_service'] ?? false);
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['action'] ?? '') === 'confirm') && $useSalesService) {
+  try {
+    CSRF::verify($_POST['csrf_token'] ?? null);
+
+    $validator = new \App\Domain\Sales\Validators\CreateSalesInvoiceValidator();
+    $dto = $validator->validate($_POST);
+    $service = new \App\Domain\Sales\SalesService($pdo);
+
+    $invoiceId = $service->createInvoice($dto, (int)$user['id']);
+    header("Location: {$base}/sale_view.php?id={$invoiceId}");
+    exit;
+  } catch (InvalidArgumentException $e) {
+    $error = $e->getMessage();
+  } catch (Throwable $e) {
+    log_message('error', 'Failed to create sales invoice via service', [
+      'exception' => $e->getMessage(),
+      'trace' => $e->getTraceAsString(),
+    ]);
+    $error = "Unexpected error while creating invoice. Please try again.";
+  }
+
+  $selectedCustomerId = (int)($_POST['customer_id'] ?? $selectedCustomerId);
+  $selectedSupplierId = (int)($_POST['supplier_id'] ?? $selectedSupplierId);
+}
 
 // ---------- Handle POST (Confirm invoice)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['action'] ?? '') === 'confirm')) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['action'] ?? '') === 'confirm') && !$useSalesService) {
   try {
     CSRF::verify($_POST['csrf_token'] ?? null);
 
@@ -240,7 +250,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['action'] ?? '') === 'conf
 
           } catch (Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
-            $error = "Database error: " . $e->getMessage();
+            log_message('error', 'Failed to create sales invoice', [
+              'exception' => $e->getMessage(),
+              'trace' => $e->getTraceAsString(),
+            ]);
+            $error = "حدث خطأ في قاعدة البيانات. حاول مرة أخرى.";
           }
         }
       }
@@ -251,7 +265,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['action'] ?? '') === 'conf
     $selectedSupplierId = $supplier_id;
 
   } catch (Throwable $e) {
-    $error = "Error: " . $e->getMessage();
+    log_message('error', 'Unhandled error in sale_create', [
+      'exception' => $e->getMessage(),
+      'trace' => $e->getTraceAsString(),
+    ]);
+    $error = "حدث خطأ غير متوقع. حاول مرة أخرى.";
   }
 }
 

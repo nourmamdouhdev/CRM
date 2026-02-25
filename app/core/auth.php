@@ -21,7 +21,7 @@ final class Auth {
       'id' => (int)$user['id'],
       'full_name' => $user['full_name'],
       'username' => $user['username'],
-      'role' => $user['role'],
+      'role' => strtolower(trim((string)$user['role'])),
     ];
     return true;
   }

@@ -1,18 +1,5 @@
 <?php
-require __DIR__ . '/../app/core/DB.php';
-require __DIR__ . '/../app/core/Auth.php';
-require __DIR__ . '/../app/core/CSRF.php';
-require __DIR__ . '/../app/Middlewares/AuthMiddleware.php';
-
-$config = require __DIR__ . '/../config/config.php';
-session_name($config['app']['session_name']);
-session_start();
-
-AuthMiddleware::handle();
-$user = Auth::user();
-$pdo  = DB::pdo();
-
-$base = $config['app']['base_url'] ?? '/tagom/public';
+require __DIR__ . '/bootstrap.php';
 
 $title = "Suppliers";
 $subtitle = "إضافة مورد + البحث + قائمة الموردين";
@@ -62,30 +49,62 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['action'] ?? '') === 'add'
  * Search
  */
 $q = trim($_GET['q'] ?? '');
+$page = max(1, (int)($_GET['page'] ?? 1));
+$perPage = 20;
+$offset = ($page - 1) * $perPage;
+$totalSuppliers = 0;
+$totalPages = 1;
 
 /**
  * LIST Suppliers
  */
 if ($q !== '') {
+  $countStmt = $pdo->prepare("
+    SELECT COUNT(*)
+    FROM parties
+    WHERE type='supplier' AND is_active=1
+      AND (name LIKE ? OR phone LIKE ?)
+  ");
+  $like = "%{$q}%";
+  $countStmt->execute([$like, $like]);
+  $totalSuppliers = (int)$countStmt->fetchColumn();
+
   $stmt = $pdo->prepare("
     SELECT id, name, phone, created_at
     FROM parties
     WHERE type='supplier' AND is_active=1
       AND (name LIKE ? OR phone LIKE ?)
     ORDER BY id DESC
+    LIMIT ? OFFSET ?
   ");
-  $like = "%{$q}%";
-  $stmt->execute([$like, $like]);
+  $stmt->bindValue(1, $like, PDO::PARAM_STR);
+  $stmt->bindValue(2, $like, PDO::PARAM_STR);
+  $stmt->bindValue(3, $perPage, PDO::PARAM_INT);
+  $stmt->bindValue(4, $offset, PDO::PARAM_INT);
+  $stmt->execute();
   $suppliers = $stmt->fetchAll();
 } else {
-  $stmt = $pdo->query("
+  $countStmt = $pdo->query("
+    SELECT COUNT(*)
+    FROM parties
+    WHERE type='supplier' AND is_active=1
+  ");
+  $totalSuppliers = (int)$countStmt->fetchColumn();
+
+  $stmt = $pdo->prepare("
     SELECT id, name, phone, created_at
     FROM parties
     WHERE type='supplier' AND is_active=1
     ORDER BY id DESC
+    LIMIT ? OFFSET ?
   ");
+  $stmt->bindValue(1, $perPage, PDO::PARAM_INT);
+  $stmt->bindValue(2, $offset, PDO::PARAM_INT);
+  $stmt->execute();
   $suppliers = $stmt->fetchAll();
 }
+$totalPages = max(1, (int)ceil($totalSuppliers / $perPage));
+$page = min($page, $totalPages);
 
 $csrf = CSRF::token();
 
@@ -151,7 +170,7 @@ require __DIR__ . '/../app/views/partials/header.php';
         <div>
           <h3 class="font-extrabold text-lg">Suppliers List</h3>
           <div class="text-sm text-slate-500">
-            Showing <b><?= count($suppliers) ?></b> result(s)
+            Showing <b><?= count($suppliers) ?></b> result(s) out of <b><?= (int)$totalSuppliers ?></b>
             <?php if ($q !== ''): ?> for "<b><?= htmlspecialchars($q) ?></b>"<?php endif; ?>
           </div>
         </div>
@@ -203,6 +222,22 @@ require __DIR__ . '/../app/views/partials/header.php';
           </tbody>
         </table>
       </div>
+      <?php if ($totalPages > 1): ?>
+        <div class="mt-4 flex items-center justify-between text-sm">
+          <div class="text-slate-500">Page <?= (int)$page ?> / <?= (int)$totalPages ?></div>
+          <div class="flex gap-2">
+            <?php
+              $prevPage = max(1, $page - 1);
+              $nextPage = min($totalPages, $page + 1);
+              $qParam = $q !== '' ? '&q=' . urlencode($q) : '';
+            ?>
+            <a class="rounded-xl border border-slate-200 px-3 py-1.5 <?= $page <= 1 ? 'pointer-events-none opacity-50' : 'hover:bg-slate-50' ?>"
+               href="<?= $base ?>/suppliers.php?page=<?= $prevPage . $qParam ?>">Prev</a>
+            <a class="rounded-xl border border-slate-200 px-3 py-1.5 <?= $page >= $totalPages ? 'pointer-events-none opacity-50' : 'hover:bg-slate-50' ?>"
+               href="<?= $base ?>/suppliers.php?page=<?= $nextPage . $qParam ?>">Next</a>
+          </div>
+        </div>
+      <?php endif; ?>
 
     </div>
   </div>

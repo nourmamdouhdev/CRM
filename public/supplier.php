@@ -1,32 +1,5 @@
 <?php
-require __DIR__ . '/../app/core/DB.php';
-require __DIR__ . '/../app/core/Auth.php';
-require __DIR__ . '/../app/Middlewares/AuthMiddleware.php';
-
-$config = require __DIR__ . '/../config/config.php';
-session_name($config['app']['session_name']);
-session_start();
-
-AuthMiddleware::handle();
-
-$user = Auth::user();
-$pdo  = DB::pdo();
-
-$base = $config['app']['base_url'] ?? '/tagom/public';
-
-// helpers
-function h($v) { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
-function money($n) { return number_format((float)$n, 2); }
-function typeLabel(string $type): string {
-  return match ($type) {
-    'sale_invoice' => 'فاتورة بيع',
-    'purchase_invoice' => 'فاتورة شراء',
-    'payment_in' => 'تحصيل',
-    'payment_out' => 'سداد',
-    'adjustment' => 'تسوية',
-    default => $type,
-  };
-}
+require __DIR__ . '/bootstrap.php';
 
 // id
 $id = (int)($_GET['id'] ?? 0);

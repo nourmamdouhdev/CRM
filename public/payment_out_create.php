@@ -1,32 +1,15 @@
 <?php
-require __DIR__ . '/../app/core/DB.php';
-require __DIR__ . '/../app/core/Auth.php';
-require __DIR__ . '/../app/core/CSRF.php';
-require __DIR__ . '/../app/Middlewares/AuthMiddleware.php';
-
-$config = require __DIR__ . '/../config/config.php';
-session_name($config['app']['session_name']);
-session_start();
-
-AuthMiddleware::handle();
-$user = Auth::user();
-$pdo  = DB::pdo();
-
-$base = $config['app']['base_url'] ?? '/tagom/public';
-
-function h($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
-function money($n){ return number_format((float)$n, 2); }
-
+require __DIR__ . '/bootstrap.php';
 if (empty($user['id'])) {
-  die("User not authenticated (missing user id).");
+  render_error('Authentication required.', 401);
 }
+authorize($config['authz']['payment_out_create'] ?? [ROLE_ADMIN, ROLE_MANAGER]);
 
 $supplier_id = (int)($_GET['supplier_id'] ?? $_POST['supplier_id'] ?? 0);
 $invoice_id_q = (int)($_GET['invoice_id'] ?? 0);
 
 if ($supplier_id <= 0) {
-  http_response_code(400);
-  die("Missing supplier_id");
+  render_error('طلب غير صالح (supplier).', 400);
 }
 
 // Load supplier
@@ -40,8 +23,7 @@ $stmt->execute([$supplier_id]);
 $supplier = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$supplier) {
-  http_response_code(404);
-  die("Supplier not found");
+  render_error('المورد غير موجود.', 404);
 }
 
 // Load unpaid invoices (remaining_amount > 0)
@@ -57,11 +39,38 @@ $openInvoices = $stmt->fetchAll(PDO::FETCH_ASSOC);
 $csrf = CSRF::token();
 $error = null;
 $success = null;
+$usePaymentService = (bool)($config['features']['use_payment_service'] ?? false);
 
 $today = date('Y-m-d');
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['action'] ?? '') === 'save') && $usePaymentService) {
+  try {
+    CSRF::verify($_POST['csrf_token'] ?? null);
+
+    $validator = new \App\Domain\Payments\Validators\PaySupplierValidator();
+    $dto = $validator->validate($_POST, $supplier_id);
+    $service = new \App\Domain\Payments\PaymentService($pdo);
+    $service->paySupplier($dto, (int)$user['id']);
+
+    if ($dto->invoiceId > 0) {
+      header("Location: {$base}/purchase_view.php?id={$dto->invoiceId}");
+      exit;
+    }
+    header("Location: {$base}/supplier.php?id={$supplier_id}");
+    exit;
+  } catch (InvalidArgumentException $e) {
+    $error = $e->getMessage();
+  } catch (Throwable $e) {
+    log_message('error', 'Failed to record supplier payment via service', [
+      'exception' => $e->getMessage(),
+      'trace' => $e->getTraceAsString(),
+    ]);
+    $error = "Unexpected error while saving payment. Please try again.";
+  }
+}
+
 // Handle POST
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['action'] ?? '') === 'save')) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['action'] ?? '') === 'save') && !$usePaymentService) {
   try {
     CSRF::verify($_POST['csrf_token'] ?? null);
 
@@ -184,13 +193,21 @@ if ($invoice_id > 0) {
 
         } catch (Throwable $e) {
           if ($pdo->inTransaction()) $pdo->rollBack();
-          $error = "Database error: " . $e->getMessage();
+          log_message('error', 'Failed to record supplier payment', [
+            'exception' => $e->getMessage(),
+            'trace' => $e->getTraceAsString(),
+          ]);
+          $error = "حدث خطأ في قاعدة البيانات. حاول مرة أخرى.";
         }
       }
     }
 
   } catch (Throwable $e) {
-    $error = "Error: " . $e->getMessage();
+    log_message('error', 'Unhandled error in payment_out_create', [
+      'exception' => $e->getMessage(),
+      'trace' => $e->getTraceAsString(),
+    ]);
+    $error = "حدث خطأ غير متوقع. حاول مرة أخرى.";
   }
 }
 

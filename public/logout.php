@@ -1,11 +1,8 @@
 <?php
-require __DIR__ . '/../app/Core/Auth.php';
-
-$config = require __DIR__ . '/../config/config.php';
-session_name($config['app']['session_name']);
-session_start();
+$requireAuth = false;
+require __DIR__ . '/bootstrap.php';
 
 Auth::logout();
-header('Location: /tagom/public/login.php');
+header("Location: {$base}/login.php");
 exit;
 

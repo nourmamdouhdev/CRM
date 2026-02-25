@@ -1,5 +1,6 @@
 <?php
 $base = $base ?? ($config['app']['base_url'] ?? '/tagom/public');
+$assetBase = $base !== '' ? $base : '';
 ?>
 <!doctype html>
 <html lang="ar" dir="rtl">
@@ -23,67 +24,60 @@ $base = $base ?? ($config['app']['base_url'] ?? '/tagom/public');
     }
   </script>
 
-  <style>
-    /* hide text when sidebar minimized */
-    .sidebar.min .sidebar-text {
-      display: none;
-    }
-  </style>
+  <link rel="stylesheet" href="<?= $assetBase ?>/assets/app.css" />
 </head>
 
-<body class="bg-slate-50 text-slate-900 font-sans">
+<body class="tagom-shell text-slate-900 font-sans">
   <div class="min-h-screen flex">
 
-    <!-- Sidebar -->
     <aside id="sidebar"
-      class="sidebar transition-all duration-300 w-[270px] bg-slate-900 text-slate-100 p-4 hidden md:block">
+      class="sidebar tagom-sidebar transition-all duration-300 w-[270px] text-slate-100 p-4 hidden md:block">
 
-      <div class="rounded-2xl bg-white/5 p-3 flex items-center justify-between mb-4">
+      <div class="sidebar-brand rounded-2xl p-3 flex items-center justify-between mb-4">
         <div class="font-extrabold sidebar-text">Tagom CRM</div>
-        <div class="text-xs opacity-80 sidebar-text">Internal</div>
+        <div class="text-xs sidebar-badge sidebar-text">Internal</div>
       </div>
 
-      <div class="rounded-2xl border border-white/10 bg-white/5 p-3 mb-4">
+      <div class="sidebar-user-card rounded-2xl p-3 mb-4">
         <div class="font-semibold sidebar-text"><?= htmlspecialchars($user['full_name'] ?? '') ?></div>
         <div class="text-xs text-slate-300 mt-1 sidebar-text"><?= htmlspecialchars($user['role'] ?? '') ?></div>
       </div>
 
       <nav class="space-y-2">
-        <a class="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/10"
-           href="<?= $base ?>/index.php">
-          <span>🏠</span><span class="sidebar-text">Dashboard</span>
+        <a class="sidebar-link flex items-center gap-3 px-3 py-2 rounded-xl" href="<?= $base ?>/index.php">
+          <span class="sidebar-icon">DB</span><span class="sidebar-text">Dashboard</span>
         </a>
 
-        <a class="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/10"
-           href="<?= $base ?>/customers.php">
-          <span>👥</span><span class="sidebar-text">Customers</span>
+        <a class="sidebar-link flex items-center gap-3 px-3 py-2 rounded-xl" href="<?= $base ?>/customers.php">
+          <span class="sidebar-icon">CU</span><span class="sidebar-text">Customers</span>
         </a>
 
-        <a class="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/10"
-           href="<?= $base ?>/suppliers.php">
-          <span>🏭</span><span class="sidebar-text">Suppliers</span>
+        <a class="sidebar-link flex items-center gap-3 px-3 py-2 rounded-xl" href="<?= $base ?>/suppliers.php">
+          <span class="sidebar-icon">SU</span><span class="sidebar-text">Suppliers</span>
         </a>
 
-        <a class="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/10"
-           href="<?= $base ?>/products.php">
-          <span>📦</span><span class="sidebar-text">Products</span>
+        <a class="sidebar-link flex items-center gap-3 px-3 py-2 rounded-xl" href="<?= $base ?>/products.php">
+          <span class="sidebar-icon">PR</span><span class="sidebar-text">Products</span>
         </a>
 
-        <a class="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/10"
-           href="<?= $base ?>/logout.php">
-          <span>🚪</span><span class="sidebar-text">Logout</span>
+        <?php if (has_role([ROLE_OWNER])): ?>
+          <a class="sidebar-link flex items-center gap-3 px-3 py-2 rounded-xl" href="<?= $base ?>/users.php">
+            <span class="sidebar-icon">US</span><span class="sidebar-text">Users</span>
+          </a>
+        <?php endif; ?>
+
+        <a class="sidebar-link flex items-center gap-3 px-3 py-2 rounded-xl" href="<?= $base ?>/logout.php">
+          <span class="sidebar-icon">LO</span><span class="sidebar-text">Logout</span>
         </a>
       </nav>
     </aside>
 
-    <!-- Main -->
     <main class="flex-1 p-4 md:p-6">
 
-      <!-- Top bar -->
       <div class="flex items-center justify-between mb-4">
         <button id="toggleSidebar"
-          class="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm hover:bg-slate-50">
-          ☰
+          class="topbar-toggle inline-flex items-center justify-center rounded-xl px-3 py-2 shadow-sm">
+          Menu
         </button>
 
         <div class="text-right">

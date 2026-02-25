@@ -1,16 +1,10 @@
 <?php
-require __DIR__ . '/../app/Core/DB.php';
-require __DIR__ . '/../app/Core/Auth.php';
-require __DIR__ . '/../app/Core/CSRF.php';
-
-$config = require __DIR__ . '/../config/config.php';
-
-session_name($config['app']['session_name']);
-session_start();
+$requireAuth = false;
+require __DIR__ . '/bootstrap.php';
 
 if (Auth::check()) {
-header('Location: /tagom/public/index.php');
-exit;
+  header("Location: {$base}/index.php");
+  exit;
 }
 
 $error = null;
