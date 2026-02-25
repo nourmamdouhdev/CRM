@@ -7,7 +7,7 @@ $assetBase = $base !== '' ? $base : '';
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title><?= htmlspecialchars($title ?? 'Tagom CRM') ?></title>
+  <title><?= htmlspecialchars($title ?? 'CRM') ?></title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -34,7 +34,7 @@ $assetBase = $base !== '' ? $base : '';
       class="sidebar tagom-sidebar transition-all duration-300 w-[270px] text-slate-100 p-4 hidden md:block">
 
       <div class="sidebar-brand rounded-2xl p-3 flex items-center justify-between mb-4">
-        <div class="font-extrabold sidebar-text">Tagom CRM</div>
+        <div class="font-extrabold sidebar-text">CRM</div>
         <div class="text-xs sidebar-badge sidebar-text">Internal</div>
       </div>
 
@@ -45,29 +45,29 @@ $assetBase = $base !== '' ? $base : '';
 
       <nav class="space-y-2">
         <a class="sidebar-link flex items-center gap-3 px-3 py-2 rounded-xl" href="<?= $base ?>/index.php">
-          <span class="sidebar-icon">DB</span><span class="sidebar-text">Dashboard</span>
+          <span class="sidebar-icon"><img class="sidebar-icon-img" src="<?= $assetBase ?>/assets/img/dashborad.png" alt="Dashboard"></span><span class="sidebar-text">Dashboard</span>
         </a>
 
         <a class="sidebar-link flex items-center gap-3 px-3 py-2 rounded-xl" href="<?= $base ?>/customers.php">
-          <span class="sidebar-icon">CU</span><span class="sidebar-text">Customers</span>
+          <span class="sidebar-icon"><img class="sidebar-icon-img" src="<?= $assetBase ?>/assets/img/customers.png" alt="Customers"></span><span class="sidebar-text">Customers</span>
         </a>
 
         <a class="sidebar-link flex items-center gap-3 px-3 py-2 rounded-xl" href="<?= $base ?>/suppliers.php">
-          <span class="sidebar-icon">SU</span><span class="sidebar-text">Suppliers</span>
+          <span class="sidebar-icon"><img class="sidebar-icon-img" src="<?= $assetBase ?>/assets/img/supliers.png" alt="Suppliers"></span><span class="sidebar-text">Suppliers</span>
         </a>
 
         <a class="sidebar-link flex items-center gap-3 px-3 py-2 rounded-xl" href="<?= $base ?>/products.php">
-          <span class="sidebar-icon">PR</span><span class="sidebar-text">Products</span>
+          <span class="sidebar-icon"><img class="sidebar-icon-img" src="<?= $assetBase ?>/assets/img/prodututs.png" alt="Products"></span><span class="sidebar-text">Products</span>
         </a>
 
         <?php if (has_role([ROLE_OWNER])): ?>
           <a class="sidebar-link flex items-center gap-3 px-3 py-2 rounded-xl" href="<?= $base ?>/users.php">
-            <span class="sidebar-icon">US</span><span class="sidebar-text">Users</span>
+            <span class="sidebar-icon"><img class="sidebar-icon-img" src="<?= $assetBase ?>/assets/img/users.png" alt="Users"></span><span class="sidebar-text">Users</span>
           </a>
         <?php endif; ?>
 
         <a class="sidebar-link flex items-center gap-3 px-3 py-2 rounded-xl" href="<?= $base ?>/logout.php">
-          <span class="sidebar-icon">LO</span><span class="sidebar-text">Logout</span>
+          <span class="sidebar-icon"><img class="sidebar-icon-img" src="<?= $assetBase ?>/assets/img/logout.png" alt="Logout"></span><span class="sidebar-text">Logout</span>
         </a>
       </nav>
     </aside>
