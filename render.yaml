@@ -1,0 +1,42 @@
+services:
+  - type: web
+    name: tagom-crm
+    runtime: docker
+    plan: free
+    region: oregon
+    branch: main
+    autoDeploy: true
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health.php
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_SECURE
+        value: "1"
+      - key: APP_SAMESITE
+        value: Lax
+      - key: APP_BASE_URL
+        value: ""
+      - key: DB_HOST
+        value: "127.0.0.1"
+      - key: DB_NAME
+        value: tagom_crm
+      - key: DB_USER
+        value: tagom
+      - key: APP_KEY
+        generateValue: true
+      - key: DB_PASS
+        generateValue: true
+      - key: WHATSAPP_ACCESS_TOKEN
+        sync: false
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      - key: WHATSAPP_VERIFY_TOKEN
+        sync: false
+      - key: WHATSAPP_APP_SECRET
+        sync: false
+      - key: CLAUDE_API_KEY
+        sync: false
+      - key: MCP_BEARER_TOKEN
+        sync: false

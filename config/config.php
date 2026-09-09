@@ -18,7 +18,14 @@ $toBool = static function (mixed $value, bool $default = false): bool {
   return $default;
 };
 
-$baseUrl = $getenvOrDefault('APP_BASE_URL', '/tagom/public');
+$explicitBase = getenv('APP_BASE_URL');
+if ($explicitBase !== false) {
+  $baseUrl = (string)$explicitBase;
+} elseif (getenv('RENDER') !== false || getenv('RENDER_EXTERNAL_URL') !== false) {
+  $baseUrl = '';
+} else {
+  $baseUrl = '/tagom/public';
+}
 $appEnv = $getenvOrDefault('APP_ENV', 'local');
 $appSameSite = $getenvOrDefault('APP_SAMESITE', 'Lax');
 $appSecureEnv = $getenvOrDefault('APP_SECURE', null);
