@@ -145,6 +145,43 @@ if (!function_exists('log_message')) {
     }
 }
 
+if (!function_exists('app_public_url')) {
+    function app_public_url(string $path = ''): string
+    {
+        global $base;
+
+        $prefix = rtrim((string)($base ?? ''), '/');
+        $path = '/' . ltrim($path, '/');
+        if ($path === '/') {
+            $path = '';
+        }
+
+        if (preg_match('#^https?://#i', $prefix) === 1) {
+            return $prefix . $path;
+        }
+
+        $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+            || ((string)($_SERVER['SERVER_PORT'] ?? '') === '443');
+        $host = (string)($_SERVER['HTTP_HOST'] ?? 'localhost');
+
+        return ($https ? 'https' : 'http') . '://' . $host . $prefix . $path;
+    }
+}
+
+if (!function_exists('lead_source_options')) {
+    function lead_source_options(): array
+    {
+        return App\Domain\Leads\LeadSource::options();
+    }
+}
+
+if (!function_exists('lead_source_label')) {
+    function lead_source_label(?string $value): string
+    {
+        return App\Domain\Leads\LeadSource::label($value);
+    }
+}
+
 if (!function_exists('audit_log')) {
     function audit_log(string $action, string $entityType, int $entityId, array $payload = []): void
     {

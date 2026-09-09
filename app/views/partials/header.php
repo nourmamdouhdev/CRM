@@ -61,6 +61,9 @@ $assetBase = $base !== '' ? $base : '';
         </a>
 
         <?php if (has_role([ROLE_OWNER])): ?>
+          <a class="sidebar-link flex items-center gap-3 px-3 py-2 rounded-xl" href="<?= $base ?>/integrations.php">
+            <span class="sidebar-icon"><img class="sidebar-icon-img" src="<?= $assetBase ?>/assets/img/users.png" alt="Integrations"></span><span class="sidebar-text">Integrations</span>
+          </a>
           <a class="sidebar-link flex items-center gap-3 px-3 py-2 rounded-xl" href="<?= $base ?>/users.php">
             <span class="sidebar-icon"><img class="sidebar-icon-img" src="<?= $assetBase ?>/assets/img/users.png" alt="Users"></span><span class="sidebar-text">Users</span>
           </a>

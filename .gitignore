@@ -1,0 +1,5 @@
+/storage/app.key
+/storage/logs/
+/storage/phpunit.phar
+/storage/phpunit/
+/vendor/

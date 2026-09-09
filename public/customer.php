@@ -1,6 +1,9 @@
 <?php
 require __DIR__ . '/bootstrap.php';
 
+use App\Domain\Integrations\IntegrationFactory;
+use App\Domain\Leads\LeadSource;
+
 // ---- get id
 $id = (int)($_GET['id'] ?? 0);
 if ($id <= 0) {
@@ -8,9 +11,56 @@ if ($id <= 0) {
   exit('Invalid id');
 }
 
+$whatsApp = IntegrationFactory::whatsApp($pdo, $config);
+$mcp = IntegrationFactory::mcp($pdo, $config);
+$profileError = null;
+$profileSuccess = null;
+$draftText = '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+  try {
+    CSRF::verify($_POST['csrf_token'] ?? null);
+    $action = (string)($_POST['action'] ?? '');
+
+    if ($action === 'update_lead_source') {
+      $leadSource = LeadSource::normalize($_POST['lead_source'] ?? null);
+      $stmt = $pdo->prepare("UPDATE parties SET lead_source = ? WHERE id = ? AND type='customer' LIMIT 1");
+      $stmt->execute([$leadSource, $id]);
+      audit_log('lead_source_updated', 'parties', $id, ['lead_source' => $leadSource]);
+      header("Location: {$base}/customer.php?id={$id}&ok=lead");
+      exit;
+    }
+
+    if ($action === 'send_whatsapp') {
+      $body = trim((string)($_POST['wa_message'] ?? ''));
+      $phone = trim((string)($_POST['wa_phone'] ?? ''));
+      $result = $whatsApp->sendText($id, $phone, $body, (int)($user['id'] ?? 0));
+      audit_log('whatsapp_sent', 'parties', $id, ['phone' => $result['phone'], 'wa_message_id' => $result['wa_message_id']]);
+      header("Location: {$base}/customer.php?id={$id}&ok=whatsapp");
+      exit;
+    }
+
+    if ($action === 'draft_whatsapp') {
+      $hint = trim((string)($_POST['wa_message'] ?? ''));
+      $prompt = "Write a short WhatsApp follow-up for CRM customer. Hint: " . ($hint !== '' ? $hint : 'polite check-in about their account.');
+      $draftText = $mcp->draftMessage($prompt);
+    }
+  } catch (Throwable $e) {
+    $profileError = $e->getMessage();
+  }
+}
+
+if (isset($_GET['ok'])) {
+  $profileSuccess = match ((string)$_GET['ok']) {
+    'lead' => 'Lead source updated.',
+    'whatsapp' => 'WhatsApp message sent.',
+    default => 'Saved.',
+  };
+}
+
 // ---- get customer
 $stmt = $pdo->prepare("
-  SELECT id, name, phone, address, notes, opening_balance, opening_balance_type, is_active
+  SELECT id, name, phone, address, notes, lead_source, opening_balance, opening_balance_type, is_active
   FROM parties
   WHERE id = ? AND type='customer' AND is_active=1
   LIMIT 1
@@ -148,7 +198,22 @@ $subtitle = "كشف حساب + رصيد العميل";
 require __DIR__ . '/../app/views/partials/header.php';
 
 $today = date('Y-m-d');
+$csrf = CSRF::token();
+$leadSourceOptions = LeadSource::options();
+$waHistory = [];
+try {
+  $waHistory = $whatsApp->recentForParty((int)$customer['id']);
+} catch (Throwable) {
+  $waHistory = [];
+}
 ?>
+
+<?php if ($profileError): ?>
+  <div class="mb-4 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-800"><?= h($profileError) ?></div>
+<?php endif; ?>
+<?php if ($profileSuccess): ?>
+  <div class="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-800"><?= h($profileSuccess) ?></div>
+<?php endif; ?>
 
 <!-- Header Card -->
 <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 mb-4">
@@ -158,6 +223,7 @@ $today = date('Y-m-d');
       <div class="text-sm text-slate-500 mt-1">
         ID: <?= (int)$customer['id'] ?>
         <?php if (!empty($customer['phone'])): ?> • Phone: <?= h($customer['phone']) ?><?php endif; ?>
+        • Lead Source: <b><?= h(lead_source_label($customer['lead_source'] ?? null)) ?></b>
       </div>
 
       <?php if (!empty($customer['address'])): ?>
@@ -192,6 +258,59 @@ $today = date('Y-m-d');
         </a>
       </div>
     </div>
+  </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+  <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+    <div class="font-extrabold text-lg mb-3">Lead Source</div>
+    <form method="post" class="flex flex-col md:flex-row gap-2">
+      <input type="hidden" name="csrf_token" value="<?= h($csrf) ?>">
+      <select name="lead_source" class="flex-1 rounded-xl border border-slate-200 px-3 py-2 bg-white">
+        <option value="">— Select —</option>
+        <?php foreach ($leadSourceOptions as $value => $label): ?>
+          <option value="<?= h($value) ?>" <?= ($customer['lead_source'] ?? '') === $value ? 'selected' : '' ?>><?= h($label) ?></option>
+        <?php endforeach; ?>
+      </select>
+      <button type="submit" name="action" value="update_lead_source"
+              class="rounded-xl bg-slate-900 text-white px-4 py-2 font-semibold hover:bg-slate-800">Save</button>
+    </form>
+  </div>
+
+  <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+    <div class="flex items-center justify-between mb-3">
+      <div class="font-extrabold text-lg">WhatsApp</div>
+      <span class="text-xs <?= $whatsApp->isReady() ? 'text-emerald-700' : 'text-slate-500' ?>">
+        <?= $whatsApp->isReady() ? 'API active' : 'Activate in Integrations' ?>
+      </span>
+    </div>
+    <form method="post" class="space-y-2">
+      <input type="hidden" name="csrf_token" value="<?= h($csrf) ?>">
+      <input name="wa_phone" value="<?= h($customer['phone'] ?? '') ?>" placeholder="Phone with country code"
+             class="w-full rounded-xl border border-slate-200 px-3 py-2">
+      <textarea name="wa_message" rows="3" placeholder="Message"
+                class="w-full rounded-xl border border-slate-200 px-3 py-2"><?= h($draftText) ?></textarea>
+      <div class="flex flex-wrap gap-2">
+        <button type="submit" name="action" value="send_whatsapp" <?= $whatsApp->isReady() ? '' : 'disabled' ?>
+                class="rounded-xl bg-emerald-600 text-white px-4 py-2 font-semibold hover:bg-emerald-700 disabled:opacity-50">Send WhatsApp</button>
+        <?php if ($mcp->claudeEnabled() && $mcp->claudeConfigured()): ?>
+          <button type="submit" name="action" value="draft_whatsapp"
+                  class="rounded-xl border border-slate-200 px-4 py-2 font-semibold hover:bg-slate-50">Draft with Claude</button>
+        <?php endif; ?>
+      </div>
+    </form>
+    <?php if (!empty($waHistory)): ?>
+      <div class="mt-3 text-xs text-slate-500 space-y-1">
+        <?php foreach (array_slice($waHistory, 0, 5) as $msg): ?>
+          <div>
+            <b><?= h($msg['direction']) ?></b>
+            · <?= h($msg['status']) ?>
+            · <?= h($msg['created_at']) ?>
+            · <?= h(mb_strimwidth((string)$msg['body'], 0, 80, '…')) ?>
+          </div>
+        <?php endforeach; ?>
+      </div>
+    <?php endif; ?>
   </div>
 </div>
 

@@ -65,3 +65,5 @@ if ($requireAuth) {
 $user = Auth::user();
 $pdo  = DB::pdo();
 
+App\Infrastructure\Database\SchemaGuard::ensure($pdo);
+

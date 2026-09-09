@@ -1,10 +1,13 @@
 <?php
 require __DIR__ . '/bootstrap.php';
 
+use App\Domain\Leads\LeadSource;
+
 $title = "Customers";
 $subtitle = "إضافة عميل + البحث + قائمة العملاء";
 
 $error = null;
+$leadSourceOptions = LeadSource::options();
 
 /**
  * ADD Customer (Only when action=add)
@@ -21,15 +24,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['action'] ?? '') === 'add'
   $opening_balance = 0;
   $opening_balance_type = 'debit';
 
+  try {
+    $leadSource = LeadSource::normalize($_POST['lead_source'] ?? null);
+  } catch (InvalidArgumentException $e) {
+    $leadSource = null;
+    $error = 'Invalid lead source.';
+  }
+
   if ($name === '') {
     $error = 'اسم العميل مطلوب.';
-  } else {
+  } elseif ($error === null) {
     // Use positional placeholders to avoid HY093 issues
     $sql = "
       INSERT INTO parties
-        (type, name, phone, address, notes, opening_balance, opening_balance_type, is_active)
+        (type, name, phone, address, notes, lead_source, opening_balance, opening_balance_type, is_active)
       VALUES
-        ('customer', ?, ?, ?, ?, ?, ?, 1)
+        ('customer', ?, ?, ?, ?, ?, ?, ?, 1)
     ";
     $stmt = $pdo->prepare($sql);
 
@@ -38,6 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['action'] ?? '') === 'add'
       ($phone !== '' ? $phone : null),
       ($address !== '' ? $address : null),
       ($notes !== '' ? $notes : null),
+      $leadSource,
       $opening_balance,
       $opening_balance_type,
     ]);
@@ -51,60 +62,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['action'] ?? '') === 'add'
  * Search (GET)
  */
 $q = trim($_GET['q'] ?? '');
+$leadFilter = trim((string)($_GET['lead_source'] ?? ''));
+if ($leadFilter !== '' && !LeadSource::isValid($leadFilter)) {
+  $leadFilter = '';
+}
 $page = max(1, (int)($_GET['page'] ?? 1));
 $perPage = 20;
 $offset = ($page - 1) * $perPage;
 $totalCustomers = 0;
 $totalPages = 1;
 
+$where = "type='customer' AND is_active=1";
+$params = [];
+if ($q !== '') {
+  $where .= " AND (name LIKE ? OR phone LIKE ?)";
+  $like = "%{$q}%";
+  $params[] = $like;
+  $params[] = $like;
+}
+if ($leadFilter !== '') {
+  $where .= " AND lead_source = ?";
+  $params[] = $leadFilter;
+}
+
 /**
  * LIST Customers
  */
-if ($q !== '') {
-  $countStmt = $pdo->prepare("
-    SELECT COUNT(*)
-    FROM parties
-    WHERE type='customer' AND is_active=1
-      AND (name LIKE ? OR phone LIKE ?)
-  ");
-  $like = "%{$q}%";
-  $countStmt->execute([$like, $like]);
-  $totalCustomers = (int)$countStmt->fetchColumn();
+$countSql = "SELECT COUNT(*) FROM parties WHERE {$where}";
+$countStmt = $pdo->prepare($countSql);
+$countStmt->execute($params);
+$totalCustomers = (int)$countStmt->fetchColumn();
 
-  $stmt = $pdo->prepare("
-    SELECT id, name, phone, created_at
-    FROM parties
-    WHERE type='customer' AND is_active=1
-      AND (name LIKE ? OR phone LIKE ?)
-    ORDER BY id DESC
-    LIMIT ? OFFSET ?
-  ");
-  $stmt->bindValue(1, $like, PDO::PARAM_STR);
-  $stmt->bindValue(2, $like, PDO::PARAM_STR);
-  $stmt->bindValue(3, $perPage, PDO::PARAM_INT);
-  $stmt->bindValue(4, $offset, PDO::PARAM_INT);
-  $stmt->execute();
-  $customers = $stmt->fetchAll();
-} else {
-  $countStmt = $pdo->query("
-    SELECT COUNT(*)
-    FROM parties
-    WHERE type='customer' AND is_active=1
-  ");
-  $totalCustomers = (int)$countStmt->fetchColumn();
-
-  $stmt = $pdo->prepare("
-    SELECT id, name, phone, created_at
-    FROM parties
-    WHERE type='customer' AND is_active=1
-    ORDER BY id DESC
-    LIMIT ? OFFSET ?
-  ");
-  $stmt->bindValue(1, $perPage, PDO::PARAM_INT);
-  $stmt->bindValue(2, $offset, PDO::PARAM_INT);
-  $stmt->execute();
-  $customers = $stmt->fetchAll();
+$listSql = "
+  SELECT id, name, phone, lead_source, created_at
+  FROM parties
+  WHERE {$where}
+  ORDER BY id DESC
+  LIMIT ? OFFSET ?
+";
+$stmt = $pdo->prepare($listSql);
+$bind = 1;
+foreach ($params as $param) {
+  $stmt->bindValue($bind, $param, PDO::PARAM_STR);
+  $bind++;
 }
+$stmt->bindValue($bind, $perPage, PDO::PARAM_INT);
+$stmt->bindValue($bind + 1, $offset, PDO::PARAM_INT);
+$stmt->execute();
+$customers = $stmt->fetchAll();
 $totalPages = max(1, (int)ceil($totalCustomers / $perPage));
 $page = min($page, $totalPages);
 
@@ -148,6 +153,17 @@ require __DIR__ . '/../app/views/partials/header.php';
       </div>
 
       <div class="mt-3">
+        <label class="block text-sm text-slate-600 mb-1">Lead Source</label>
+        <select name="lead_source"
+                class="w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-200 bg-white">
+          <option value="">— Select —</option>
+          <?php foreach ($leadSourceOptions as $value => $label): ?>
+            <option value="<?= h($value) ?>"><?= h($label) ?></option>
+          <?php endforeach; ?>
+        </select>
+      </div>
+
+      <div class="mt-3">
         <label class="block text-sm text-slate-600 mb-1">ملاحظات</label>
         <input name="notes"
                class="w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-200">
@@ -177,10 +193,17 @@ require __DIR__ . '/../app/views/partials/header.php';
           </div>
         </div>
 
-        <form method="get" action="<?= $base ?>/customers.php" class="flex gap-2">
+        <form method="get" action="<?= $base ?>/customers.php" class="flex flex-wrap gap-2">
           <input name="q" value="<?= htmlspecialchars($q) ?>"
                  placeholder="Search name / phone..."
-                 class="w-full md:w-72 rounded-xl border border-slate-200 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-200">
+                 class="w-full md:w-56 rounded-xl border border-slate-200 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-200">
+          <select name="lead_source"
+                  class="rounded-xl border border-slate-200 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-200 bg-white">
+            <option value="">All sources</option>
+            <?php foreach ($leadSourceOptions as $value => $label): ?>
+              <option value="<?= h($value) ?>" <?= $leadFilter === $value ? 'selected' : '' ?>><?= h($label) ?></option>
+            <?php endforeach; ?>
+          </select>
           <button class="rounded-xl border border-slate-200 px-4 py-2 hover:bg-slate-50 font-semibold">
             Search
           </button>
@@ -198,13 +221,14 @@ require __DIR__ . '/../app/views/partials/header.php';
               <th class="py-2 px-2">#</th>
               <th class="py-2 px-2">الاسم</th>
               <th class="py-2 px-2">الموبايل</th>
+              <th class="py-2 px-2">Lead Source</th>
               <th class="py-2 px-2">Action</th>
             </tr>
           </thead>
           <tbody>
           <?php if (empty($customers)): ?>
             <tr>
-              <td colspan="4" class="py-6 text-center text-slate-500">No customers found.</td>
+              <td colspan="5" class="py-6 text-center text-slate-500">No customers found.</td>
             </tr>
           <?php endif; ?>
 
@@ -213,6 +237,7 @@ require __DIR__ . '/../app/views/partials/header.php';
               <td class="py-2 px-2"><?= (int)$c['id'] ?></td>
               <td class="py-2 px-2 font-semibold"><?= htmlspecialchars($c['name']) ?></td>
               <td class="py-2 px-2"><?= htmlspecialchars($c['phone'] ?? '') ?></td>
+              <td class="py-2 px-2"><?= h(lead_source_label($c['lead_source'] ?? null)) ?></td>
               <td class="py-2 px-2">
                 <a class="inline-flex items-center rounded-xl bg-slate-900 text-white px-3 py-1.5 hover:bg-slate-800"
                    href="<?= $base ?>/customer.php?id=<?= (int)$c['id'] ?>">
@@ -232,6 +257,7 @@ require __DIR__ . '/../app/views/partials/header.php';
               $prevPage = max(1, $page - 1);
               $nextPage = min($totalPages, $page + 1);
               $qParam = $q !== '' ? '&q=' . urlencode($q) : '';
+              $qParam .= $leadFilter !== '' ? '&lead_source=' . urlencode($leadFilter) : '';
             ?>
             <a class="rounded-xl border border-slate-200 px-3 py-1.5 <?= $page <= 1 ? 'pointer-events-none opacity-50' : 'hover:bg-slate-50' ?>"
                href="<?= $base ?>/customers.php?page=<?= $prevPage . $qParam ?>">Prev</a>
